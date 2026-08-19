@@ -12,6 +12,7 @@ import {
   renameScene,
   serializeScript,
   deserializeScript,
+  toggleLineMark,
 } from "../app/js/edit.js";
 
 function demo() {
@@ -98,4 +99,13 @@ test("JSON round-trip preserves lines and characters", () => {
   assert.equal(copy.title, script.title);
   assert.equal(copy.lines.length, script.lines.length);
   assert.equal(copy.characters.map((c) => c.name).join(","), script.characters.map((c) => c.name).join(","));
+});
+
+test("toggleLineMark flips a sticky flag", () => {
+  let script = demo();
+  const id = script.lines[1].id;
+  script = toggleLineMark(script, id);
+  assert.equal(script.lines[1].marked, true);
+  script = toggleLineMark(script, id);
+  assert.equal(script.lines[1].marked, false);
 });

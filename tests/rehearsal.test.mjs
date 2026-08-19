@@ -7,6 +7,7 @@ import {
   promptLineForIndex,
   nextIndex,
   isPlaylistComplete,
+  nextMarkedStepIndex,
 } from "../app/js/rehearsal.js";
 
 const src = `Demo
@@ -107,4 +108,18 @@ test("loop wraps; without loop it completes", () => {
   assert.equal(nextIndex(playlist, last, false), playlist.steps.length);
   assert.equal(isPlaylistComplete(playlist, playlist.steps.length, false), true);
   assert.equal(isPlaylistComplete(playlist, 0, true), false);
+});
+
+test("nextMarkedStepIndex jumps to the next sticky line", () => {
+  let script = demo();
+  script = {
+    ...script,
+    lines: script.lines.map((l, i) => (i === 2 || i === 5 ? { ...l, marked: true } : l)),
+  };
+  const playlist = buildPlaylist(script, { mode: "full" });
+  const firstMark = playlist.steps.findIndex((s) => s.line.marked);
+  const secondMark = playlist.steps.findIndex((s, i) => s.line.marked && i > firstMark);
+  assert.ok(firstMark >= 0 && secondMark > firstMark);
+  assert.equal(nextMarkedStepIndex(playlist, firstMark, true), secondMark);
+  assert.equal(nextMarkedStepIndex(playlist, secondMark, true), firstMark);
 });

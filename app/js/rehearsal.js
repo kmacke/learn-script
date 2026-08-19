@@ -143,6 +143,19 @@ export function nextIndex(playlist, index, loop) {
   return loop ? 0 : playlist.steps.length;
 }
 
+export function nextMarkedStepIndex(playlist, fromIndex, wrap = true) {
+  const steps = playlist?.steps || [];
+  if (!steps.length) return null;
+  const start = Math.max(0, fromIndex) + 1;
+  const limit = wrap ? steps.length : steps.length - start;
+  for (let i = 0; i < limit; i += 1) {
+    const idx = wrap ? (start + i) % steps.length : start + i;
+    if (idx === fromIndex) continue;
+    if (steps[idx]?.line?.marked) return idx;
+  }
+  return null;
+}
+
 export function isPlaylistComplete(playlist, index, loop) {
   return !loop && index >= playlist.steps.length;
 }

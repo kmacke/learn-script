@@ -155,6 +155,22 @@ export function renameScene(script, sceneId, name) {
   });
 }
 
+export function toggleLineMark(script, lineId) {
+  return touch(script, {
+    lines: script.lines.map((l) => (l.id === lineId ? { ...l, marked: !l.marked } : l)),
+  });
+}
+
+export function clearLineMarks(script) {
+  return touch(script, {
+    lines: script.lines.map((l) => (l.marked ? { ...l, marked: false } : l)),
+  });
+}
+
+export function markedCount(script) {
+  return script.lines.filter((l) => l.marked).length;
+}
+
 export const SCRIPT_FILE_VERSION = 1;
 
 export function serializeScript(script) {

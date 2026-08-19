@@ -336,6 +336,26 @@ export function updateCharacter(script, characterId, patch) {
   };
 }
 
-export function characterMap(script) {
-  return new Map(script.characters.map((c) => [c.id, c]));
+export function scriptWarnings(script) {
+  const warnings = [];
+  if (!script.characters.length) {
+    warnings.push("No characters detected. Use ALL CAPS cues or NAME: dialogue.");
+  }
+  if (!script.lines.length) {
+    warnings.push("No lines detected. Check that the file is a script, not a scan-only PDF.");
+  }
+  const n = script.lines.length;
+  if (n) {
+    const dirs = script.lines.filter((l) => l.type === "direction" || !l.characterId).length;
+    if (dirs / n > 0.55 && n > 4) {
+      warnings.push("More than half of the lines look like stage directions. Character cues may have been missed.");
+    }
+  }
+  if (script.characters.length > 18) {
+    warnings.push("Unusually many characters — the importer may have treated headings as names.");
+  }
+  if (script.scenes.length === 1 && n > 40) {
+    warnings.push("Only one scene was found in a long script. You can rename or split by editing after import.");
+  }
+  return warnings;
 }

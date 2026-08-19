@@ -1,4 +1,4 @@
-import { parseScript } from "../app/js/parser.js";
+import { parseScript, scriptWarnings } from "../app/js/parser.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -112,4 +112,20 @@ Hi.
     script.characters.map((c) => c.name).sort(),
     ["Alice", "Bob"]
   );
+});
+
+test("scriptWarnings flags missing characters and direction-heavy parses", () => {
+  const empty = parseScript("Just a title\n\n");
+  const emptyNotes = scriptWarnings(empty);
+  assert.ok(emptyNotes.some((w) => /no characters/i.test(w) || /no lines/i.test(w)));
+  const dirs = parseScript(`Notes
+
+[Enter everyone]
+[They sit]
+[Lights fade]
+[Blackout]
+[Curtain]
+`);
+  const notes = scriptWarnings(dirs);
+  assert.ok(notes.some((w) => /stage directions/i.test(w) || /no characters/i.test(w)));
 });

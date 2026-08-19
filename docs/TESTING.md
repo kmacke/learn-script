@@ -28,7 +28,8 @@ Use the sample **The Green Room**.
 7. Loop returns to the start of the range without a stuck utterance.
 8. Pause stops audio immediately.
 9. Import paste of a tiny custom scene parses and plays.
-10. Tap a line, change speaker, save; merge two characters on Cast.
+11. Mark a line in the player, then Next mark jumps to it.
+12. First-run coaching overlay can be skipped.
 
 ## Quality judgment (required in STATUS)
 

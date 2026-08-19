@@ -416,6 +416,56 @@ a { color: var(--gold); }
 
 .muted { color: var(--text-dim); }
 
+.warn {
+  color: #f0c27a;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 8px 0 0;
+}
+
+.mark-pip {
+  color: var(--danger);
+  margin-right: 6px;
+}
+.list-line.is-marked {
+  box-shadow: inset 3px 0 0 var(--danger);
+  padding-left: 10px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 6, 5, 0.72);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 40;
+  padding: 16px 16px calc(20px + var(--safe-b));
+}
+.overlay .sheet {
+  width: min(430px, 100%);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 20px 16px 16px;
+  box-shadow: var(--shadow);
+}
+.overlay .sheet h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-play);
+  font-size: 24px;
+}
+.overlay .sheet p {
+  color: var(--text-dim);
+  line-height: 1.45;
+  margin: 0;
+}
+
 @media (min-width: 720px) {
   .app { max-width: 430px; margin: 0 auto; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 }

@@ -1,5 +1,5 @@
-import { parseScript, setMyCharacter, updateCharacter, characterMap } from "./parser.js";
-import { buildPlaylist, PLAY_MODES, promptLineForIndex, myCharacter } from "./rehearsal.js";
+import { parseScript, setMyCharacter, updateCharacter, characterMap, scriptWarnings } from "./parser.js";
+import { buildPlaylist, PLAY_MODES, promptLineForIndex, myCharacter, nextMarkedStepIndex } from "./rehearsal.js";
 import { TtsEngine, assignVoices } from "./tts.js";
 import * as db from "./db.js";
 import { extractPdfText } from "./pdfImport.js";
@@ -17,6 +17,9 @@ import {
   renameScene,
   serializeScript,
   deserializeScript,
+  toggleLineMark,
+  clearLineMarks,
+  markedCount,
 } from "./edit.js";
 
 const tts = new TtsEngine();
@@ -54,6 +57,8 @@ const state = {
     waitingAfterGap: false,
   },
   lineId: null,
+  sheet: null,
+  coachStep: null,
 };
 
 function parseRoute() {
@@ -141,6 +146,7 @@ function render() {
   else if (state.route === "line") appEl.innerHTML = renderLine();
   else if (state.route === "script") appEl.innerHTML = renderScript();
   else appEl.innerHTML = renderLibrary();
+  appEl.innerHTML += renderCoach() + renderSheet();
   bind();
 }
 
@@ -195,6 +201,7 @@ function renderImport() {
         <h3>${escapeHtml(preview.title)}</h3>
         <p>${preview.characters.length} characters · ${preview.scenes.length} scenes · ${preview.lines.length} lines</p>
         <p class="hint" style="margin-top:8px">${preview.characters.map((c) => escapeHtml(c.name)).join(" · ") || "No characters detected — check formatting."}</p>
+        ${scriptWarnings(preview).map((w) => `<p class="warn">${escapeHtml(w)}</p>`).join("")}
       </div>
       <button class="btn primary" data-act="save-import" ${preview.lines.length ? "" : "disabled"}>Save and open</button>`
     : "";
@@ -237,7 +244,8 @@ function renderScript() {
     <div class="screen">
       <div class="hero">
         <h2>${escapeHtml(s.title)}</h2>
-        <p>${s.lines.length} lines · ${s.scenes.length} scenes · Your role: <strong>${escapeHtml(me?.name || "not set")}</strong></p>
+        <p>${s.lines.length} lines · ${s.scenes.length} scenes · Your role: <strong>${escapeHtml(me?.name || "not set")}</strong>${markedCount(s) ? ` · ${markedCount(s)} marked` : ""}</p>
+        ${scriptWarnings(s).map((w) => `<p class="warn">${escapeHtml(w)}</p>`).join("")}
       </div>
       <div class="btn-row" style="margin-bottom:16px">
         <button class="btn" data-act="goto-cast">Cast & voices</button>
@@ -247,6 +255,7 @@ function renderScript() {
       ${grouped}
       <div class="btn-row" style="margin-top:18px">
         <button class="btn" data-act="export-json">Backup script</button>
+        ${markedCount(s) ? `<button class="btn" data-act="clear-marks">Clear marks</button>` : ""}
       </div>
     </div>`;
 }
@@ -255,8 +264,9 @@ function lineRow(script, line) {
   const ch = script.characters.find((c) => c.id === line.characterId);
   const cls = !ch ? "dir" : ch.isMe ? "" : "other";
   const who = ch ? ch.name : "Stage direction";
-  return `<button class="list-line" data-act="edit-line" data-id="${line.id}">
-    <div class="who ${cls}"><span>${escapeHtml(who)}</span><span class="num">${line.number}</span></div>
+  const mark = line.marked ? `<span class="mark-pip" title="Marked">●</span>` : "";
+  return `<button class="list-line ${line.marked ? "is-marked" : ""}" data-act="edit-line" data-id="${line.id}">
+    <div class="who ${cls}"><span>${mark}${escapeHtml(who)}</span><span class="num">${line.number}</span></div>
     <div class="txt">${escapeHtml(line.text)}</div>
   </button>`;
 }
@@ -381,9 +391,10 @@ function renderLine() {
       </div>
       <button class="btn primary" data-act="save-line" style="width:100%">Save line</button>
       <div class="btn-row" style="margin-top:10px">
+        <button class="btn" data-act="toggle-mark">${line.marked ? "Unmark sticky" : "Mark sticky"}</button>
         <button class="btn" data-act="split-nl">Split paragraphs</button>
-        <button class="btn" data-act="split-mid">Split in half</button>
       </div>
+      <button class="btn" data-act="split-mid" style="width:100%;margin-top:10px">Split in half</button>
       <button class="btn danger" data-act="delete-line" style="width:100%;margin-top:10px">Delete line</button>
     </div>`;
 }
@@ -417,9 +428,9 @@ function renderPlay() {
     ${topbar("Player", { back: true, action: `<button class="btn ghost" data-act="goto-setup" style="min-height:44px;padding:8px 10px">Range</button>` })}
     <div class="player">
       <div class="progress"><span style="width:${pct}%"></span></div>
-      <p class="hint" style="margin:0 0 8px">${playlist.mode} · ${escapeHtml(sceneByIdName(s, step))} · lines ${playlist.range.start}–${playlist.range.end} · ${playlist.steps.length ? Math.min(p.index + 1, playlist.steps.length) : 0}/${playlist.steps.length}${state.setup.loop ? " · loop" : ""}</p>
+      <p class="hint" style="margin:0 0 8px">${playlist.mode} · ${escapeHtml(sceneByIdName(s, step))} · lines ${playlist.range.start}–${playlist.range.end} · ${playlist.steps.length ? Math.min(p.index + 1, playlist.steps.length) : 0}/${playlist.steps.length}${state.setup.loop ? " · loop" : ""}${markedCount(s) ? ` · ${markedCount(s)} marked` : ""}</p>
       <div class="player-stage">
-        <div class="player-kicker ${kickerClass}">${escapeHtml(kicker)}</div>
+        <div class="player-kicker ${kickerClass}">${step?.line?.marked ? "● " : ""}${escapeHtml(kicker)}</div>
         <p class="player-text">${escapeHtml(step ? (step.kind === "gap" ? "Your line — speak it. Prompt if you dry." : step.line.text) : "Nothing to play. Change the range.")}</p>
         <p class="player-next">${
           !playlist.steps.length
@@ -434,9 +445,78 @@ function renderPlay() {
       ${state.player.waitingAfterGap ? `<p class="hint">Gap finished — tap Play when you have said the line.</p>` : ""}
       ${tts.lastOk === false ? `<p class="hint">Silent rehearsal — this browser could not speak, but timing still runs. On iPhone use Safari.</p>` : ""}
       <div class="transport">
-        <button class="side-btn" data-act="prompt">Prompt<small>hear your line</small></button>
+        <button class="side-btn" data-act="toggle-mark">${step?.line?.marked ? "Unmark" : "Mark"}<small>sticky line</small></button>
         <button class="play-btn" data-act="toggle-play" aria-label="${p.playing ? "Pause" : "Play"}">${p.playing ? icon("pause") : icon("play")}</button>
         <button class="side-btn" data-act="skip">Skip<small>next beat</small></button>
+      </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn" data-act="prompt">Prompt</button>
+        <button class="btn" data-act="jump-mark" ${markedCount(s) ? "" : "disabled"}>Next mark</button>
+      </div>
+    </div>`;
+}
+
+const COACH_STEPS = [
+  {
+    title: "Get a script in",
+    body: "Open a sample scene or import paste / .txt / PDF of your sides.",
+  },
+  {
+    title: "Star your role",
+    body: "On Cast, tap the gold star on your character. Everyone else gets a different voice and pitch.",
+  },
+  {
+    title: "Loop the sticky bits",
+    body: "Rehearse in Cues. If you dry, Mark the line, then Next mark to jump back. Prompt reads your line.",
+  },
+];
+
+function renderCoach() {
+  if (state.route !== "library") return "";
+  if (state.coachStep == null || state.coachStep < 0) return "";
+  const step = COACH_STEPS[state.coachStep] || COACH_STEPS[0];
+  return `
+    <div class="overlay">
+      <div class="sheet">
+        <p class="hint">${state.coachStep + 1} / ${COACH_STEPS.length}</p>
+        <h3>${escapeHtml(step.title)}</h3>
+        <p>${escapeHtml(step.body)}</p>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn" data-act="coach-skip">Skip</button>
+          <button class="btn primary" data-act="coach-next">${state.coachStep >= COACH_STEPS.length - 1 ? "Let’s go" : "Next"}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderSheet() {
+  const sheet = state.sheet;
+  if (!sheet) return "";
+  if (sheet.kind === "confirm") {
+    return `
+      <div class="overlay">
+        <div class="sheet">
+          <h3>${escapeHtml(sheet.title)}</h3>
+          <p>${escapeHtml(sheet.body || "")}</p>
+          <div class="btn-row" style="margin-top:16px">
+            <button class="btn" data-act="sheet-cancel">Cancel</button>
+            <button class="btn primary" data-act="sheet-ok">${escapeHtml(sheet.okLabel || "OK")}</button>
+          </div>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="overlay">
+      <div class="sheet">
+        <h3>${escapeHtml(sheet.title)}</h3>
+        <div class="field">
+          <label>${escapeHtml(sheet.label || "Name")}</label>
+          <input id="sheet-input" value="${escapeHtml(sheet.value || "")}" />
+        </div>
+        <div class="btn-row">
+          <button class="btn" data-act="sheet-cancel">Cancel</button>
+          <button class="btn primary" data-act="sheet-ok">Save</button>
+        </div>
       </div>
     </div>`;
 }
@@ -499,6 +579,11 @@ function bind() {
       if (wrap) wrap.hidden = speaker.value !== "__new__";
     };
   }
+  const sheetInput = $("#sheet-input");
+  if (sheetInput) {
+    sheetInput.focus();
+    sheetInput.select();
+  }
 }
 
 async function handleAct(act, btn) {
@@ -531,6 +616,17 @@ async function handleAct(act, btn) {
   if (act === "rename-scene") return renameScenePrompt(btn.dataset.id);
   if (act === "rename-char") return renameCharPrompt(btn.dataset.id);
   if (act === "export-json") return exportJson();
+  if (act === "toggle-mark") return toggleMark();
+  if (act === "jump-mark") return jumpMark();
+  if (act === "clear-marks") return clearMarks();
+  if (act === "coach-next") return coachNext();
+  if (act === "coach-skip") return coachDismiss();
+  if (act === "sheet-cancel") {
+    state.sheet = null;
+    render();
+    return;
+  }
+  if (act === "sheet-ok") return sheetOk();
   if (act === "mode") {
     state.setup.mode = btn.dataset.id;
     render();
@@ -614,9 +710,14 @@ async function onFile(file) {
 
 async function removeScript() {
   if (!state.script) return;
-  if (!confirm(`Delete “${state.script.title}”?`)) return;
-  await db.deleteScript(state.script.id);
-  go("/library");
+  state.sheet = {
+    kind: "confirm",
+    action: "delete-script",
+    title: "Delete script?",
+    body: `Delete “${state.script.title}”?`,
+    okLabel: "Delete",
+  };
+  render();
 }
 
 async function claimRole(id) {
@@ -648,12 +749,15 @@ async function mergeFrom(fromId, toId) {
   const from = state.script.characters.find((c) => c.id === fromId);
   const to = state.script.characters.find((c) => c.id === toId);
   if (!from || !to) return;
-  if (!confirm(`Give every ${from.name} line to ${to.name}?`)) {
-    render();
-    return;
-  }
-  state.script = mergeCharacters(state.script, fromId, toId);
-  await db.saveScript(state.script);
+  state.sheet = {
+    kind: "confirm",
+    action: "merge",
+    fromId,
+    toId,
+    title: "Give lines?",
+    body: `Give every ${from.name} line to ${to.name}?`,
+    okLabel: "Give lines",
+  };
   render();
 }
 
@@ -693,27 +797,125 @@ async function splitCurrent(how) {
 }
 
 async function removeLine() {
-  if (!confirm("Delete this line?")) return;
-  state.script = deleteLine(state.script, state.lineId);
-  await db.saveScript(state.script);
-  go(`/s/${state.scriptId}`);
+  state.sheet = {
+    kind: "confirm",
+    action: "delete-line",
+    title: "Delete line?",
+    body: "This cannot be undone.",
+    okLabel: "Delete",
+  };
+  render();
 }
 
 async function renameCharPrompt(characterId) {
   const ch = state.script.characters.find((c) => c.id === characterId);
-  const name = prompt("Character name", ch?.name || "");
-  if (!name) return;
-  state.script = renameCharacter(state.script, characterId, name);
-  await db.saveScript(state.script);
+  state.sheet = {
+    kind: "rename",
+    action: "rename-char",
+    id: characterId,
+    title: "Character name",
+    label: "Name",
+    value: ch?.name || "",
+  };
   render();
 }
 
 async function renameScenePrompt(sceneId) {
   const scene = state.script.scenes.find((s) => s.id === sceneId);
-  const name = prompt("Scene name", scene?.name || "");
-  if (!name) return;
-  state.script = renameScene(state.script, sceneId, name);
+  state.sheet = {
+    kind: "rename",
+    action: "rename-scene",
+    id: sceneId,
+    title: "Scene name",
+    label: "Name",
+    value: scene?.name || "",
+  };
+  render();
+}
+
+async function sheetOk() {
+  const sheet = state.sheet;
+  if (!sheet) return;
+  const value = $("#sheet-input")?.value;
+  state.sheet = null;
+  if (sheet.action === "rename-char") {
+    state.script = renameCharacter(state.script, sheet.id, value);
+    await db.saveScript(state.script);
+  } else if (sheet.action === "rename-scene") {
+    state.script = renameScene(state.script, sheet.id, value);
+    await db.saveScript(state.script);
+  } else if (sheet.action === "merge") {
+    state.script = mergeCharacters(state.script, sheet.fromId, sheet.toId);
+    await db.saveScript(state.script);
+  } else if (sheet.action === "delete-line") {
+    state.script = deleteLine(state.script, state.lineId);
+    await db.saveScript(state.script);
+    go(`/s/${state.scriptId}`);
+    return;
+  } else if (sheet.action === "delete-script") {
+    await db.deleteScript(state.script.id);
+    go("/library");
+    return;
+  }
+  render();
+}
+
+async function toggleMark() {
+  const step = state.player.playlist?.steps[state.player.index];
+  const lineId = state.lineId || step?.line?.id;
+  if (!lineId) return;
+  state.script = toggleLineMark(state.script, lineId);
   await db.saveScript(state.script);
+  if (state.player.playlist) {
+    const idx = state.player.index;
+    state.player.playlist = buildPlaylist(state.script, state.setup);
+    state.player.index = Math.min(idx, Math.max(0, state.player.playlist.steps.length - 1));
+  }
+  render();
+}
+
+async function jumpMark() {
+  if (!state.player.playlist) state.player.playlist = buildPlaylist(state.script, state.setup);
+  const idx = nextMarkedStepIndex(state.player.playlist, state.player.index, true);
+  if (idx == null) return;
+  if (state.player.playing) {
+    state.player.jumpTo = idx;
+    state.player.abortStep = true;
+    tts.cancel();
+    return;
+  }
+  state.player.index = idx;
+  render();
+}
+
+async function clearMarks() {
+  state.script = clearLineMarks(state.script);
+  await db.saveScript(state.script);
+  if (state.player.playlist) {
+    const idx = state.player.index;
+    state.player.playlist = buildPlaylist(state.script, state.setup);
+    state.player.index = Math.min(idx, Math.max(0, state.player.playlist.steps.length - 1));
+  }
+  render();
+}
+
+function coachNext() {
+  if (state.coachStep == null) return;
+  if (state.coachStep >= COACH_STEPS.length - 1) {
+    coachDismiss();
+    return;
+  }
+  state.coachStep += 1;
+  render();
+}
+
+function coachDismiss() {
+  state.coachStep = -1;
+  try {
+    localStorage.setItem("learnscript-coach-v1", "1");
+  } catch {
+    /* ignore */
+  }
   render();
 }
 
@@ -764,6 +966,7 @@ function stopPlayer() {
   state.player.abort = true;
   state.player.abortStep = true;
   state.player.playing = false;
+  state.player.jumpTo = null;
   tts.cancel();
 }
 
@@ -832,7 +1035,12 @@ async function runLoop(runId) {
       }
     }
     if (state.player.abort || state.player.runId !== runId) break;
-    state.player.index += 1;
+    if (state.player.jumpTo != null) {
+      state.player.index = state.player.jumpTo;
+      state.player.jumpTo = null;
+    } else {
+      state.player.index += 1;
+    }
   }
   if (state.player.runId === runId) state.player.playing = false;
   if (state.route === "play") render();
@@ -865,6 +1073,15 @@ async function boot() {
   tts.waitForVoices().then((v) => {
     state.voices = v;
   });
+  try {
+    if (!localStorage.getItem("learnscript-coach-v1")) state.coachStep = 0;
+    else state.coachStep = -1;
+  } catch {
+    state.coachStep = 0;
+  }
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
   if (!location.hash) location.hash = "/library";
   await bootRoute();
 }
