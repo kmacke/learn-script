@@ -1,7 +1,16 @@
 /**
  * iOS-aware speech synthesis.
  * Play must call unlock() inside the tap handler before speaking.
+ * Speech failure must never freeze rehearsal: we always hold the beat.
  */
+
+function clamp(n, a, b) {
+  return Math.min(b, Math.max(a, n));
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 export class TtsEngine {
   constructor() {
@@ -10,6 +19,8 @@ export class TtsEngine {
     this.keepAlive = null;
     this.current = null;
     this.voicesCache = [];
+    this.lastOk = null;
+    this._generation = 0;
   }
 
   get supported() {
@@ -39,17 +50,19 @@ export class TtsEngine {
   }
 
   unlock() {
-    if (!this.supported) return;
+    if (!this.supported) {
+      this.unlocked = true;
+      return;
+    }
+    this.startKeepAlive();
     try {
-      window.speechSynthesis.cancel();
-      const warm = new SpeechSynthesisUtterance(" ");
+      const warm = new SpeechSynthesisUtterance(".");
       warm.volume = 0;
+      warm.rate = 2;
       window.speechSynthesis.speak(warm);
-      window.speechSynthesis.cancel();
     } catch {
       /* ignore */
     }
-    this.startKeepAlive();
     this.unlocked = true;
   }
 
@@ -60,17 +73,22 @@ export class TtsEngine {
     }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    this.audioCtx = new AC();
-    const osc = this.audioCtx.createOscillator();
-    const gain = this.audioCtx.createGain();
-    gain.gain.value = 0.0001;
-    osc.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start();
-    this.keepAlive = osc;
+    try {
+      this.audioCtx = new AC();
+      const osc = this.audioCtx.createOscillator();
+      const gain = this.audioCtx.createGain();
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(this.audioCtx.destination);
+      osc.start();
+      this.keepAlive = osc;
+    } catch {
+      this.audioCtx = null;
+    }
   }
 
   cancel() {
+    this._generation += 1;
     this.current = null;
     if (this.supported) {
       try {
@@ -81,67 +99,93 @@ export class TtsEngine {
     }
   }
 
-  speak(text, voiceSettings = {}) {
+  /**
+   * Speak text, then hold remaining estimated time if synthesis fails.
+   * Always resolves. Pass shouldAbort() to return early on pause/skip.
+   */
+  async speak(text, voiceSettings = {}, shouldAbort) {
     const spoken = String(text || "").trim();
-    if (!spoken) return Promise.resolve();
-    if (!this.supported) {
-      return new Promise((r) => setTimeout(r, voiceSettings.durationMs || 800));
+    const durationMs = Math.max(700, Number(voiceSettings.durationMs) || 900);
+    if (!spoken) {
+      await this.gap(Math.min(400, durationMs), shouldAbort);
+      return { ok: true };
     }
 
-    return new Promise((resolve, reject) => {
-      this.cancel();
-      const utter = new SpeechSynthesisUtterance(spoken);
-      const voices = this.getVoices();
-      if (voiceSettings.voiceURI) {
-        const match = voices.find((v) => v.voiceURI === voiceSettings.voiceURI || v.name === voiceSettings.voiceURI);
-        if (match) {
-          utter.voice = match;
-          utter.lang = match.lang;
-        }
-      }
-      utter.pitch = clamp(Number(voiceSettings.pitch) || 1, 0.6, 1.8);
-      utter.rate = clamp(Number(voiceSettings.rate) || 1, 0.5, 1.8);
-      utter.volume = 1;
-      this.current = utter;
+    const start = Date.now();
+    const gen = this._generation;
+    let ok = false;
+    if (this.supported) {
+      ok = await this.utter(spoken, voiceSettings, shouldAbort, durationMs);
+    }
+    if (this._generation !== gen || (shouldAbort && shouldAbort())) {
+      return { ok: false, aborted: true };
+    }
+    this.lastOk = ok;
+    const elapsed = Date.now() - start;
+    if (!ok) {
+      await this.gap(Math.max(0, durationMs - elapsed), shouldAbort);
+    }
+    return { ok };
+  }
+
+  utter(spoken, voiceSettings, shouldAbort, durationMs) {
+    return new Promise((resolve) => {
       let settled = false;
-      const finish = () => {
+      const gen = this._generation;
+      const done = (ok) => {
         if (settled) return;
         settled = true;
+        clearInterval(poll);
         if (this.current === utter) this.current = null;
-        resolve();
+        resolve(Boolean(ok));
       };
-      utter.onend = finish;
-      utter.onerror = (ev) => {
-        if (ev.error === "interrupted" || ev.error === "canceled") {
-          finish();
-          return;
+
+      let utter;
+      try {
+        utter = new SpeechSynthesisUtterance(spoken);
+        const voices = this.getVoices();
+        if (voiceSettings.voiceURI) {
+          const match = voices.find((v) => v.voiceURI === voiceSettings.voiceURI || v.name === voiceSettings.voiceURI);
+          if (match) {
+            utter.voice = match;
+            utter.lang = match.lang;
+          }
         }
-        settled = true;
-        reject(ev.error || ev);
-      };
-      window.speechSynthesis.speak(utter);
-      // iOS can drop onend; safety timeout based on estimate.
-      const wait = Math.max(2500, (voiceSettings.durationMs || spoken.length * 50) + 1500);
-      setTimeout(finish, wait);
+        utter.pitch = clamp(Number(voiceSettings.pitch) || 1, 0.6, 1.8);
+        utter.rate = clamp(Number(voiceSettings.rate) || 1, 0.5, 1.8);
+        utter.volume = 1;
+        this.current = utter;
+        utter.onend = () => done(true);
+        utter.onerror = () => done(false);
+        window.speechSynthesis.speak(utter);
+      } catch {
+        done(false);
+        return;
+      }
+
+      const poll = setInterval(() => {
+        if (this._generation !== gen || (shouldAbort && shouldAbort())) {
+          try {
+            window.speechSynthesis.cancel();
+          } catch {
+            /* ignore */
+          }
+          done(false);
+        }
+      }, 120);
+
+      setTimeout(() => done(false), Math.max(4000, durationMs + 2500));
     });
   }
 
   async gap(ms, shouldAbort) {
-    const total = Math.max(200, ms || 1000);
+    const total = Math.max(0, ms || 0);
     const start = Date.now();
     while (Date.now() - start < total) {
       if (shouldAbort && shouldAbort()) return;
-      await sleep(Math.min(200, total - (Date.now() - start)));
+      await sleep(Math.min(180, total - (Date.now() - start)));
     }
   }
-}
-
-function clamp(n, a, b) {
-  return Math.min(b, Math.max(a, n));
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 export function pickEnglishVoices(voices) {

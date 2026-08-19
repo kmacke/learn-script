@@ -321,12 +321,12 @@ function renderPlay() {
   const kicker = !step
     ? "No lines in this range"
     : step.kind === "gap"
-      ? "Your gap — say it"
+      ? `Line ${step.line.number} · your gap`
       : ch?.isMe
-        ? `You · ${ch.name}`
+        ? `Line ${step.line.number} · you · ${ch.name}`
         : ch
-          ? ch.name
-          : "Stage direction";
+          ? `Line ${step.line.number} · ${ch.name}`
+          : `Line ${step.line.number} · stage direction`;
   const kickerClass = step?.kind === "gap" ? "gap" : ch && !ch.isMe ? "other" : "";
   const next = playlist.steps[p.index + 1];
   const pct = playlist.steps.length ? (Math.min(p.index, playlist.steps.length) / playlist.steps.length) * 100 : 0;
@@ -334,12 +334,21 @@ function renderPlay() {
     ${topbar("Player", { back: true, action: `<button class="btn ghost" data-act="goto-setup" style="min-height:44px;padding:8px 10px">Range</button>` })}
     <div class="player">
       <div class="progress"><span style="width:${pct}%"></span></div>
-      <p class="hint" style="margin:0 0 8px">${playlist.mode} · lines ${playlist.range.start}–${playlist.range.end} · ${p.index + 1}/${playlist.steps.length || 0}${state.setup.loop ? " · loop" : ""}</p>
+      <p class="hint" style="margin:0 0 8px">${playlist.mode} · lines ${playlist.range.start}–${playlist.range.end} · ${playlist.steps.length ? Math.min(p.index + 1, playlist.steps.length) : 0}/${playlist.steps.length}${state.setup.loop ? " · loop" : ""}</p>
       <div class="player-stage">
         <div class="player-kicker ${kickerClass}">${escapeHtml(kicker)}</div>
         <p class="player-text">${escapeHtml(step ? (step.kind === "gap" ? "Your line — speak it. Prompt if you dry." : step.line.text) : "Nothing to play. Change the range.")}</p>
-        <p class="player-next">${next ? "Next: " + escapeHtml((chars.get(next.line.characterId)?.name || "Direction") + " — " + next.line.text) : state.setup.loop ? "Next: loop to start" : "End of range"}</p>
+        <p class="player-next">${
+          !playlist.steps.length
+            ? "No lines in this range. Tap Range and widen start/end."
+            : next
+              ? "Next: " + escapeHtml((chars.get(next.line.characterId)?.name || "Direction") + " — " + next.line.text)
+              : state.setup.loop
+                ? "Next: loop to start"
+                : "End of range"
+        }</p>
       </div>
+      ${tts.lastOk === false ? `<p class="hint">Silent rehearsal — this browser could not speak, but timing still runs. On iPhone use Safari.</p>` : ""}
       <div class="transport">
         <button class="side-btn" data-act="prompt">Prompt<small>hear your line</small></button>
         <button class="play-btn" data-act="toggle-play" aria-label="${p.playing ? "Pause" : "Play"}">${p.playing ? icon("pause") : icon("play")}</button>
@@ -523,16 +532,37 @@ async function previewCharacter(id) {
   await tts.speak(text, { ...ch, durationMs: estimateSpeechMs(text, state.setup.rate) });
 }
 
+function captureSetupFromForm() {
+  const startLine = $("#start-line");
+  const endLine = $("#end-line");
+  const startScene = $("#start-scene");
+  const endScene = $("#end-scene");
+  const extra = $("#extra-gap");
+  const rate = $("#rate");
+  if (startLine) state.setup.startLine = Number(startLine.value);
+  if (endLine) state.setup.endLine = Number(endLine.value);
+  if (startScene) state.setup.startSceneId = startScene.value;
+  if (endScene) state.setup.endSceneId = endScene.value;
+  if (extra) state.setup.extraGapMs = Number(extra.value);
+  if (rate) state.setup.rate = Number(rate.value);
+}
+
 function startPlay() {
+  captureSetupFromForm();
   const playlist = buildPlaylist(state.script, state.setup);
-  state.player = { playing: false, index: 0, playlist, abort: false };
+  state.player = { playing: false, index: 0, playlist, abort: false, abortStep: false, runId: 0 };
   go(`/s/${state.scriptId}/play`);
 }
 
 function stopPlayer() {
   state.player.abort = true;
+  state.player.abortStep = true;
   state.player.playing = false;
   tts.cancel();
+}
+
+function shouldAbortStep() {
+  return Boolean(state.player.abort || state.player.abortStep);
 }
 
 async function togglePlay() {
@@ -544,45 +574,46 @@ async function togglePlay() {
   tts.unlock();
   if (!state.player.playlist) state.player.playlist = buildPlaylist(state.script, state.setup);
   state.player.abort = false;
+  state.player.abortStep = false;
   state.player.playing = true;
+  state.player.runId = (state.player.runId || 0) + 1;
+  const runId = state.player.runId;
   render();
-  await runLoop();
+  await runLoop(runId);
 }
 
-async function runLoop() {
+async function runLoop(runId) {
   const playlist = state.player.playlist;
   const chars = characterMap(state.script);
-  while (state.player.playing && !state.player.abort) {
+  while (state.player.playing && !state.player.abort && state.player.runId === runId) {
     if (!playlist.steps.length) break;
     if (state.player.index >= playlist.steps.length) {
-      if (state.setup.loop) {
-        state.player.index = 0;
-      } else {
-        break;
-      }
+      if (state.setup.loop) state.player.index = 0;
+      else break;
     }
+    state.player.abortStep = false;
     render();
     const step = playlist.steps[state.player.index];
     const ch = chars.get(step.line.characterId);
     const rate = (ch?.rate || 1) * state.setup.rate;
     if (step.kind === "speak") {
-      try {
-        await tts.speak(step.line.text, {
+      await tts.speak(
+        step.line.text,
+        {
           voiceURI: ch?.voiceURI,
           pitch: ch?.pitch || 1,
           rate,
           durationMs: step.durationMs,
-        });
-      } catch {
-        /* keep going */
-      }
+        },
+        shouldAbortStep
+      );
     } else {
-      await tts.gap(step.durationMs, () => state.player.abort);
+      await tts.gap(step.durationMs, shouldAbortStep);
     }
-    if (state.player.abort) break;
+    if (state.player.abort || state.player.runId !== runId) break;
     state.player.index += 1;
   }
-  state.player.playing = false;
+  if (state.player.runId === runId) state.player.playing = false;
   if (state.route === "play") render();
 }
 
@@ -592,14 +623,20 @@ async function promptNow() {
   const line = promptLineForIndex(playlist, state.player.index);
   if (!line) return;
   const ch = state.script.characters.find((c) => c.id === line.characterId);
-  await tts.speak(line.text, { ...ch, durationMs: estimateSpeechMs(line.text, state.setup.rate) });
+  await tts.speak(line.text, { ...ch, durationMs: estimateSpeechMs(line.text, state.setup.rate) }, shouldAbortStep);
 }
 
 function skipStep() {
-  if (!state.player.playlist) return;
-  tts.cancel();
+  if (!state.player.playlist?.steps.length) return;
+  if (state.player.playing) {
+    state.player.abortStep = true;
+    tts.cancel();
+    return;
+  }
   state.player.index += 1;
-  if (state.player.index >= state.player.playlist.steps.length && state.setup.loop) state.player.index = 0;
+  if (state.player.index >= state.player.playlist.steps.length) {
+    state.player.index = state.setup.loop ? 0 : state.player.playlist.steps.length - 1;
+  }
   render();
 }
 
