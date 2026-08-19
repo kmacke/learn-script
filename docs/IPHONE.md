@@ -6,9 +6,10 @@
 2. Tap Share → **Add to Home Screen**.
 3. Open LearnScript from the icon. It should run full-screen.
 
-Until GitHub Pages (or another HTTPS host) is enabled, you can also:
+Until GitHub Pages (or another HTTPS host) is enabled:
 
-- Run `python3 -m http.server 4173 --directory app` on a computer on the same Wi-Fi and visit `http://<computer-lan-ip>:4173` in Safari.
+- Repo owner: GitHub → Settings → Pages → Deploy from branch `main`, folder `/` (root `index.html` redirects into `app/`).
+- Or run `python3 -m http.server 4173 --directory app` on a computer on the same Wi-Fi and visit `http://<computer-lan-ip>:4173` in Safari.
 - iOS requires a user tap before speech will start. The Play button is that tap.
 
 ## iOS speech limits we design around

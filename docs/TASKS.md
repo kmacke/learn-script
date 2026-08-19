@@ -36,30 +36,30 @@ Update this file whenever work starts or finishes. Details and quality notes go 
 
 ## P3 — Import
 
-- [ ] P3.1 Paste and `.txt` import with parse preview
-- [ ] P3.2 PDF text extraction + same preview
+- [x] P3.1 Paste and `.txt` import with parse preview
+- [x] P3.2 PDF text extraction + same preview
 - [ ] P3.3 Edit character of a line; merge duplicate characters
 - [ ] P3.4 Edit/split/delete lines after import
 - [ ] P3.5 Named scene list from messy PDF text (heuristic + manual rename)
 
 ## P4 — Player parity and polish
 
-- [ ] P4.1 Extra gap slider, speed control, stage-direction toggle
+- [x] P4.1 Extra gap slider, speed control, stage-direction toggle
 - [ ] P4.2 Pause after my gap
 - [ ] P4.3 Mark problem lines and jump back to them
 - [ ] P4.4 Recap-my-lines-only mode
 - [ ] P4.5 First-run coaching overlay
 - [ ] P4.6 Empty/error states and parse-confidence warnings
 - [ ] P4.7 Offline service worker for app shell
-- [ ] P4.8 Visual iPhone-width QA pass and CSS fixes
+- [x] P4.8 Visual iPhone-width QA pass and CSS fixes
 
 ## P5 — Quality loop (repeat every session)
 
-- [ ] P5.1 Automated tests green
-- [ ] P5.2 Manual rehearsal of sample scene in all play modes
-- [ ] P5.3 Judge: would this actually help memorize lines? Write notes in STATUS
-- [ ] P5.4 Fix the top issues from that judgment
-- [ ] P5.5 Update STATUS, TASKS, commit, push, PR
+- [x] P5.1 Automated tests green
+- [x] P5.2 Manual rehearsal of sample scene in all play modes
+- [x] P5.3 Judge: would this actually help memorize lines? Write notes in STATUS
+- [x] P5.4 Fix the top issues from that judgment
+- [x] P5.5 Update STATUS, TASKS, commit, push, PR
 
 ## P6 — Distribution
 

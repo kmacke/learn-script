@@ -266,7 +266,7 @@ function renderCast() {
   return `
     ${topbar("Cast & voices", { back: true })}
     <div class="screen">
-      <p class="hint">Gold star = your role (those lines become gaps in Cues mode). Preview each voice. Pitch is the LineLearner trick: everyone should sound different.</p>
+      <p class="hint">Tap the gold star on <strong>your</strong> role — those lines become gaps in Cues mode. Preview each voice. Pitch is how you tell people apart when voices are similar.</p>
       ${rows || `<p class="error">No characters parsed. Go back and check the script formatting.</p>`}
       <div class="btn-row" style="margin-top:18px">
         <button class="btn primary" data-act="goto-setup">Rehearse this cast</button>
@@ -461,7 +461,7 @@ async function addSample(key) {
     script = { ...script, id: existing.id, createdAt: existing.createdAt };
   }
   await db.saveScript(script);
-  go(`/s/${script.id}`);
+  go(script.characters.some((c) => c.isMe) ? `/s/${script.id}` : `/s/${script.id}/cast`);
 }
 
 async function withVoices(script) {
@@ -490,7 +490,7 @@ async function saveImport() {
   await db.saveScript(script);
   state.importPreview = null;
   state.importText = "";
-  go(`/s/${script.id}`);
+  go(script.characters.some((c) => c.isMe) ? `/s/${script.id}` : `/s/${script.id}/cast`);
 }
 
 async function onFile(file) {
