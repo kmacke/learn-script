@@ -311,6 +311,12 @@ function renderSetup() {
     </div>`;
 }
 
+function sceneByIdName(script, step) {
+  if (!step) return "no range";
+  const scene = script.scenes.find((sc) => sc.id === step.line.sceneId);
+  return scene?.name || "scene";
+}
+
 function renderPlay() {
   const s = state.script;
   const p = state.player;
@@ -334,7 +340,7 @@ function renderPlay() {
     ${topbar("Player", { back: true, action: `<button class="btn ghost" data-act="goto-setup" style="min-height:44px;padding:8px 10px">Range</button>` })}
     <div class="player">
       <div class="progress"><span style="width:${pct}%"></span></div>
-      <p class="hint" style="margin:0 0 8px">${playlist.mode} · lines ${playlist.range.start}–${playlist.range.end} · ${playlist.steps.length ? Math.min(p.index + 1, playlist.steps.length) : 0}/${playlist.steps.length}${state.setup.loop ? " · loop" : ""}</p>
+      <p class="hint" style="margin:0 0 8px">${playlist.mode} · ${escapeHtml(sceneByIdName(s, step))} · lines ${playlist.range.start}–${playlist.range.end} · ${playlist.steps.length ? Math.min(p.index + 1, playlist.steps.length) : 0}/${playlist.steps.length}${state.setup.loop ? " · loop" : ""}</p>
       <div class="player-stage">
         <div class="player-kicker ${kickerClass}">${escapeHtml(kicker)}</div>
         <p class="player-text">${escapeHtml(step ? (step.kind === "gap" ? "Your line — speak it. Prompt if you dry." : step.line.text) : "Nothing to play. Change the range.")}</p>
@@ -450,6 +456,10 @@ async function addSample(key) {
   if (!sample) return;
   let script = parseScript(sample.text, { title: sample.title, sourceType: "sample" });
   script = await withVoices(script);
+  const existing = (await db.listScripts()).find((s) => s.sourceType === "sample" && s.title === sample.title);
+  if (existing) {
+    script = { ...script, id: existing.id, createdAt: existing.createdAt };
+  }
   await db.saveScript(script);
   go(`/s/${script.id}`);
 }

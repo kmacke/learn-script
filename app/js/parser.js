@@ -124,16 +124,17 @@ export function parseScript(rawText, options = {}) {
 
   while (i < linesIn.length && isBlank(linesIn[i])) i += 1;
 
+  const bodyAt = indexOfBodyStart(linesIn, i);
   if (!title) {
-    const bodyAt = indexOfBodyStart(linesIn, i);
     const titleParts = [];
-    while (i < bodyAt && titleParts.length < 3) {
-      if (!isBlank(linesIn[i])) titleParts.push(linesIn[i].trim());
-      i += 1;
+    let t = i;
+    while (t < bodyAt && titleParts.length < 3) {
+      if (!isBlank(linesIn[t])) titleParts.push(linesIn[t].trim());
+      t += 1;
     }
     title = titleParts.join(": ");
-    i = Math.max(i, bodyAt);
   }
+  i = bodyAt;
 
   // Optional CHARACTERS block
   while (i < linesIn.length) {

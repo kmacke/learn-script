@@ -55,6 +55,15 @@ test("parses title, characters, scenes, and dialogue cues", () => {
   script.lines.forEach((line, i) => assert.equal(line.number, i + 1));
 });
 
+test("supplied title still skips the heading block", () => {
+  const script = parseScript(GREEN_ROOM, { title: "The Green Room" });
+  assert.equal(script.title, "The Green Room");
+  assert.equal(script.characters.some((c) => /green room/i.test(c.name)), false);
+  assert.equal(script.scenes.length, 2);
+  const first = script.lines.find((l) => l.type === "dialogue");
+  assert.match(first.text, /Places in five/);
+});
+
 test("parses NAME: sides on one line", () => {
   const script = parseScript(`Cold Read
 
