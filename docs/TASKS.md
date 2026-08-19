@@ -46,11 +46,11 @@ Update this file whenever work starts or finishes. Details and quality notes go 
 
 - [x] P4.1 Extra gap slider, speed control, stage-direction toggle
 - [x] P4.2 Pause after my gap
-- [ ] P4.3 Mark problem lines and jump back to them
+- [x] P4.3 Mark problem lines and jump back to them
 - [x] P4.4 Recap-my-lines-only mode
-- [ ] P4.5 First-run coaching overlay
-- [ ] P4.6 Empty/error states and parse-confidence warnings
-- [ ] P4.7 Offline service worker for app shell
+- [x] P4.5 First-run coaching overlay
+- [x] P4.6 Empty/error states and parse-confidence warnings
+- [x] P4.7 Offline service worker for app shell
 - [x] P4.8 Visual iPhone-width QA pass and CSS fixes
 
 ## P5 — Quality loop (repeat every session)

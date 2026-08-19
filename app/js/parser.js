@@ -359,3 +359,7 @@ export function scriptWarnings(script) {
   }
   return warnings;
 }
+
+export function characterMap(script) {
+  return new Map(script.characters.map((c) => [c.id, c]));
+}
