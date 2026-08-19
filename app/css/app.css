@@ -192,7 +192,12 @@ a { color: var(--gold); }
 .list-line {
   padding: 12px 0;
   border-bottom: 1px solid var(--line);
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
 }
+.list-line:active { background: rgba(246, 240, 232, 0.04); }
 .list-line .who {
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -371,6 +376,9 @@ a { color: var(--gold); }
   font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  display: block;
+  width: 100%;
+  text-align: left;
 }
 
 .toggle {

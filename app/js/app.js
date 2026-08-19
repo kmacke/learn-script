@@ -5,6 +5,19 @@ import * as db from "./db.js";
 import { extractPdfText } from "./pdfImport.js";
 import { SAMPLE_SCRIPTS } from "./samples.js";
 import { estimateSpeechMs } from "./model.js";
+import {
+  addCharacter,
+  mergeCharacters,
+  setLineCharacter,
+  updateLineText,
+  deleteLine,
+  splitLineOnNewlines,
+  splitLine,
+  renameCharacter,
+  renameScene,
+  serializeScript,
+  deserializeScript,
+} from "./edit.js";
 
 const tts = new TtsEngine();
 const $ = (sel) => document.querySelector(sel);
@@ -31,13 +44,16 @@ const state = {
     playDirections: false,
     extraGapMs: 400,
     rate: 1,
+    pauseAfterGap: false,
   },
   player: {
     playing: false,
     index: 0,
     playlist: null,
     abort: false,
+    waitingAfterGap: false,
   },
+  lineId: null,
 };
 
 function parseRoute() {
@@ -46,6 +62,7 @@ function parseRoute() {
   if (parts[0] === "import") return { route: "import" };
   if (parts[0] === "s" && parts[1]) {
     const id = parts[1];
+    if (parts[2] === "line" && parts[3]) return { route: "line", scriptId: id, lineId: parts[3] };
     const sub = parts[2] || "script";
     return { route: sub, scriptId: id };
   }
@@ -62,6 +79,7 @@ async function bootRoute() {
   const next = parseRoute();
   state.route = next.route;
   state.scriptId = next.scriptId || null;
+  state.lineId = next.lineId || null;
   if (state.scriptId) {
     state.script = await db.getScript(state.scriptId);
     if (!state.script) {
@@ -120,6 +138,7 @@ function render() {
   else if (state.route === "cast") appEl.innerHTML = renderCast();
   else if (state.route === "setup") appEl.innerHTML = renderSetup();
   else if (state.route === "play") appEl.innerHTML = renderPlay();
+  else if (state.route === "line") appEl.innerHTML = renderLine();
   else if (state.route === "script") appEl.innerHTML = renderScript();
   else appEl.innerHTML = renderLibrary();
   bind();
@@ -152,6 +171,11 @@ function renderLibrary() {
       <div class="hero">
         <h2>Learn the scene until it sings.</h2>
         <p>Import a script, claim your role, and loop the lines. Other characters speak in their own voices. You fill the gaps.</p>
+        ${
+          window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone
+            ? ""
+            : `<p class="hint" style="margin-top:12px">On iPhone: open in Safari → Share → <strong>Add to Home Screen</strong>. Then tap Play to allow voices.</p>`
+        }
       </div>
       <div class="fab-row">
         <button class="btn primary" data-act="goto-import">Import script</button>
@@ -177,7 +201,7 @@ function renderImport() {
   return `
     ${topbar("Import", { back: true })}
     <div class="screen">
-      <p class="hint">Paste a play, musical sides, or <code>NAME: line</code> text. Or choose a .txt / .pdf file. You will review the parse before rehearsing.</p>
+      <p class="hint">Paste a play, musical sides, or <code>NAME: line</code> text. Or choose a .txt / .pdf / LearnScript .json file. You will review the parse before rehearsing.</p>
       <div class="field">
         <label>Title (optional)</label>
         <input id="import-title" value="${escapeHtml(state.importTitle)}" placeholder="Spring Awakening — Act 2 sides" />
@@ -188,7 +212,7 @@ function renderImport() {
       </div>
       <div class="btn-row" style="margin-bottom:14px">
         <label class="btn file-btn">Choose file
-          <input id="import-file" type="file" accept=".txt,.md,.fountain,.pdf,text/plain,application/pdf" />
+          <input id="import-file" type="file" accept=".txt,.md,.fountain,.pdf,.json,text/plain,application/pdf,application/json" />
         </label>
         <button class="btn primary" data-act="parse-import">Preview</button>
       </div>
@@ -203,11 +227,9 @@ function renderScript() {
   const grouped = s.scenes.map((scene) => {
     const lines = s.lines.filter((l) => l.sceneId === scene.id);
     const body = lines
-      .slice(0, 6)
       .map((line) => lineRow(s, line))
       .join("");
-    const more = lines.length > 6 ? `<p class="hint">+ ${lines.length - 6} more lines in this scene</p>` : "";
-    return `<div class="scene-label">${escapeHtml(scene.name)}</div>${body}${more}`;
+    return `<button class="scene-label" data-act="rename-scene" data-id="${scene.id}">${escapeHtml(scene.name)} · tap to rename</button>${body}`;
   }).join("");
 
   return `
@@ -221,7 +243,11 @@ function renderScript() {
         <button class="btn" data-act="goto-cast">Cast & voices</button>
         <button class="btn primary" data-act="goto-setup">Rehearse</button>
       </div>
+      <p class="hint">Tap a line to change the speaker, edit the text, split, or delete. That is how you clean up a messy PDF parse.</p>
       ${grouped}
+      <div class="btn-row" style="margin-top:18px">
+        <button class="btn" data-act="export-json">Backup script</button>
+      </div>
     </div>`;
 }
 
@@ -229,10 +255,10 @@ function lineRow(script, line) {
   const ch = script.characters.find((c) => c.id === line.characterId);
   const cls = !ch ? "dir" : ch.isMe ? "" : "other";
   const who = ch ? ch.name : "Stage direction";
-  return `<div class="list-line">
+  return `<button class="list-line" data-act="edit-line" data-id="${line.id}">
     <div class="who ${cls}"><span>${escapeHtml(who)}</span><span class="num">${line.number}</span></div>
     <div class="txt">${escapeHtml(line.text)}</div>
-  </div>`;
+  </button>`;
 }
 
 function renderCast() {
@@ -249,13 +275,20 @@ function renderCast() {
       return `<div class="char-row">
         <div class="swatch" style="background:${c.color}"></div>
         <div style="flex:1;min-width:0">
-          <h3>${escapeHtml(c.name)}</h3>
+          <h3><button data-act="rename-char" data-id="${c.id}" style="font:inherit;color:inherit">${escapeHtml(c.name)}</button></h3>
           <div class="sub">${count} lines · pitch ${Number(c.pitch).toFixed(2)}</div>
           <select data-act="voice" data-id="${c.id}" style="margin-top:8px;width:100%;background:var(--bg-3);border:1px solid var(--line);border-radius:12px;padding:8px;font-size:16px">
             <option value="">Default device voice</option>
             ${voiceOpts}
           </select>
           <input type="range" min="0.7" max="1.5" step="0.02" value="${c.pitch}" data-act="pitch" data-id="${c.id}" style="width:100%;margin-top:8px" />
+          <select data-act="merge" data-id="${c.id}" style="margin-top:8px;width:100%;background:var(--bg-3);border:1px solid var(--line);border-radius:12px;padding:8px;font-size:16px">
+            <option value="">Give all ${escapeHtml(c.name)} lines to…</option>
+            ${s.characters
+              .filter((other) => other.id !== c.id)
+              .map((other) => `<option value="${other.id}">${escapeHtml(other.name)}</option>`)
+              .join("")}
+          </select>
         </div>
         <button class="star ${c.isMe ? "on" : ""}" data-act="me" data-id="${c.id}" aria-label="This is me">${icon("star")}</button>
         <button class="icon-btn" data-act="preview" data-id="${c.id}" aria-label="Preview">▶</button>
@@ -268,6 +301,11 @@ function renderCast() {
     <div class="screen">
       <p class="hint">Tap the gold star on <strong>your</strong> role — those lines become gaps in Cues mode. Preview each voice. Pitch is how you tell people apart when voices are similar.</p>
       ${rows || `<p class="error">No characters parsed. Go back and check the script formatting.</p>`}
+      <div class="field" style="margin-top:18px">
+        <label>Add a character</label>
+        <input id="new-char" placeholder="Stage manager" />
+      </div>
+      <button class="btn" data-act="add-character" style="width:100%">Add character</button>
       <div class="btn-row" style="margin-top:18px">
         <button class="btn primary" data-act="goto-setup">Rehearse this cast</button>
       </div>
@@ -303,11 +341,50 @@ function renderSetup() {
         <div class="field" style="flex:1"><label>End line</label><input id="end-line" type="number" inputmode="numeric" value="${st.endLine}" /></div>
       </div>
       <div class="toggle"><span>Loop this range</span><button class="switch ${st.loop ? "on" : ""}" data-act="toggle" data-key="loop"></button></div>
-      <div class="toggle"><span>Include other characters</span><button class="switch ${st.includeOthers ? "on" : ""}" data-act="toggle" data-key="includeOthers"></button></div>
       <div class="toggle"><span>Speak stage directions</span><button class="switch ${st.playDirections ? "on" : ""}" data-act="toggle" data-key="playDirections"></button></div>
+      <div class="toggle"><span>Pause after my gap</span><button class="switch ${st.pauseAfterGap ? "on" : ""}" data-act="toggle" data-key="pauseAfterGap"></button></div>
+      <div class="toggle"><span>Include other characters</span><button class="switch ${st.includeOthers ? "on" : ""}" data-act="toggle" data-key="includeOthers"></button></div>
       <div class="field"><label>Extra gap (${st.extraGapMs} ms)</label><input id="extra-gap" type="range" min="0" max="2500" step="100" value="${st.extraGapMs}" /></div>
       <div class="field"><label>Speed (${st.rate.toFixed(2)}×)</label><input id="rate" type="range" min="0.7" max="1.4" step="0.05" value="${st.rate}" /></div>
       <button class="btn primary" data-act="start-play" style="width:100%;margin-top:8px">Start rehearsal</button>
+    </div>`;
+}
+
+function renderLine() {
+  const s = state.script;
+  const line = s.lines.find((l) => l.id === state.lineId);
+  if (!line) {
+    return `${topbar("Line", { back: true })}<div class="screen"><p class="error">That line is gone.</p></div>`;
+  }
+  const opts = [
+    `<option value="__direction__"${!line.characterId ? " selected" : ""}>Stage direction</option>`,
+    ...s.characters.map(
+      (c) => `<option value="${c.id}"${c.id === line.characterId ? " selected" : ""}>${escapeHtml(c.name)}</option>`
+    ),
+    `<option value="__new__">New character…</option>`,
+  ].join("");
+  return `
+    ${topbar(`Line ${line.number}`, { back: true })}
+    <div class="screen">
+      <p class="hint">Fix a bad parse here. Change who says it, edit the words, or split a run-on speech into two lines.</p>
+      <div class="field">
+        <label>Speaker</label>
+        <select id="line-speaker">${opts}</select>
+      </div>
+      <div class="field" id="new-speaker-wrap" hidden>
+        <label>New character name</label>
+        <input id="new-speaker" placeholder="Nurse" />
+      </div>
+      <div class="field">
+        <label>Text</label>
+        <textarea id="line-text">${escapeHtml(line.text)}</textarea>
+      </div>
+      <button class="btn primary" data-act="save-line" style="width:100%">Save line</button>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn" data-act="split-nl">Split paragraphs</button>
+        <button class="btn" data-act="split-mid">Split in half</button>
+      </div>
+      <button class="btn danger" data-act="delete-line" style="width:100%;margin-top:10px">Delete line</button>
     </div>`;
 }
 
@@ -354,6 +431,7 @@ function renderPlay() {
                 : "End of range"
         }</p>
       </div>
+      ${state.player.waitingAfterGap ? `<p class="hint">Gap finished — tap Play when you have said the line.</p>` : ""}
       ${tts.lastOk === false ? `<p class="hint">Silent rehearsal — this browser could not speak, but timing still runs. On iPhone use Safari.</p>` : ""}
       <div class="transport">
         <button class="side-btn" data-act="prompt">Prompt<small>hear your line</small></button>
@@ -414,12 +492,20 @@ function bind() {
   if (rate) rate.oninput = () => {
     state.setup.rate = Number(rate.value);
   };
+  const speaker = $("#line-speaker");
+  if (speaker) {
+    speaker.onchange = () => {
+      const wrap = $("#new-speaker-wrap");
+      if (wrap) wrap.hidden = speaker.value !== "__new__";
+    };
+  }
 }
 
 async function handleAct(act, btn) {
   if (act === "back") {
     stopPlayer();
     if (state.route === "play") return go(`/s/${state.scriptId}/setup`);
+    if (state.route === "line") return go(`/s/${state.scriptId}`);
     if (state.route === "setup" || state.route === "cast") return go(`/s/${state.scriptId}`);
     return go("/library");
   }
@@ -427,6 +513,7 @@ async function handleAct(act, btn) {
   if (act === "open") return go(`/s/${btn.dataset.id}`);
   if (act === "goto-cast") return go(`/s/${state.scriptId}/cast`);
   if (act === "goto-setup") return go(`/s/${state.scriptId}/setup`);
+  if (act === "edit-line") return go(`/s/${state.scriptId}/line/${btn.dataset.id}`);
   if (act === "sample") return addSample(btn.dataset.key);
   if (act === "parse-import") return previewImport();
   if (act === "save-import") return saveImport();
@@ -435,6 +522,15 @@ async function handleAct(act, btn) {
   if (act === "voice") return changeVoice(btn.dataset.id, btn.value);
   if (act === "pitch") return changePitch(btn.dataset.id, btn.value);
   if (act === "preview") return previewCharacter(btn.dataset.id);
+  if (act === "merge") return mergeFrom(btn.dataset.id, btn.value);
+  if (act === "add-character") return addCharacterFromForm();
+  if (act === "save-line") return saveLine();
+  if (act === "split-nl") return splitCurrent("nl");
+  if (act === "split-mid") return splitCurrent("mid");
+  if (act === "delete-line") return removeLine();
+  if (act === "rename-scene") return renameScenePrompt(btn.dataset.id);
+  if (act === "rename-char") return renameCharPrompt(btn.dataset.id);
+  if (act === "export-json") return exportJson();
   if (act === "mode") {
     state.setup.mode = btn.dataset.id;
     render();
@@ -498,13 +594,18 @@ async function onFile(file) {
   state.importError = "";
   state.importTitle = state.importTitle || file.name.replace(/\.[^.]+$/, "");
   try {
-    if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+    if (/\.json$/i.test(file.name) || file.type === "application/json") {
+      state.importPreview = deserializeScript(await file.text());
+      state.importTitle = state.importTitle || state.importPreview.title;
+      state.importText = state.importPreview.sourceText || "";
+    } else if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
       const buf = await file.arrayBuffer();
       state.importText = await extractPdfText(buf);
+      state.importPreview = parseScript(state.importText, { title: state.importTitle, sourceType: "pdf" });
     } else {
       state.importText = await file.text();
+      state.importPreview = parseScript(state.importText, { title: state.importTitle, sourceType: "text" });
     }
-    state.importPreview = parseScript(state.importText, { title: state.importTitle, sourceType: file.name.endsWith(".pdf") ? "pdf" : "text" });
   } catch (err) {
     state.importError = `Could not read file: ${err.message || err}`;
   }
@@ -540,6 +641,101 @@ async function previewCharacter(id) {
   const line = state.script.lines.find((l) => l.characterId === id);
   const text = line?.text || `Hello, I am ${ch.name}.`;
   await tts.speak(text, { ...ch, durationMs: estimateSpeechMs(text, state.setup.rate) });
+}
+
+async function mergeFrom(fromId, toId) {
+  if (!toId) return;
+  const from = state.script.characters.find((c) => c.id === fromId);
+  const to = state.script.characters.find((c) => c.id === toId);
+  if (!from || !to) return;
+  if (!confirm(`Give every ${from.name} line to ${to.name}?`)) {
+    render();
+    return;
+  }
+  state.script = mergeCharacters(state.script, fromId, toId);
+  await db.saveScript(state.script);
+  render();
+}
+
+async function addCharacterFromForm() {
+  const name = $("#new-char")?.value || "";
+  state.script = addCharacter(state.script, name);
+  await db.saveScript(state.script);
+  render();
+}
+
+async function saveLine() {
+  const text = $("#line-text")?.value || "";
+  const speaker = $("#line-speaker")?.value;
+  const newName = $("#new-speaker")?.value;
+  state.script = updateLineText(state.script, state.lineId, text);
+  if (speaker === "__new__") {
+    state.script = setLineCharacter(state.script, state.lineId, newName);
+  } else {
+    state.script = setLineCharacter(state.script, state.lineId, speaker);
+  }
+  await db.saveScript(state.script);
+  go(`/s/${state.scriptId}`);
+}
+
+async function splitCurrent(how) {
+  const text = $("#line-text")?.value;
+  if (text) state.script = updateLineText(state.script, state.lineId, text);
+  if (how === "nl") state.script = splitLineOnNewlines(state.script, state.lineId);
+  else {
+    const line = state.script.lines.find((l) => l.id === state.lineId);
+    const mid = Math.floor((line?.text.length || 0) / 2);
+    const space = line.text.indexOf(" ", mid);
+    state.script = splitLine(state.script, state.lineId, space > 0 ? space : mid);
+  }
+  await db.saveScript(state.script);
+  render();
+}
+
+async function removeLine() {
+  if (!confirm("Delete this line?")) return;
+  state.script = deleteLine(state.script, state.lineId);
+  await db.saveScript(state.script);
+  go(`/s/${state.scriptId}`);
+}
+
+async function renameCharPrompt(characterId) {
+  const ch = state.script.characters.find((c) => c.id === characterId);
+  const name = prompt("Character name", ch?.name || "");
+  if (!name) return;
+  state.script = renameCharacter(state.script, characterId, name);
+  await db.saveScript(state.script);
+  render();
+}
+
+async function renameScenePrompt(sceneId) {
+  const scene = state.script.scenes.find((s) => s.id === sceneId);
+  const name = prompt("Scene name", scene?.name || "");
+  if (!name) return;
+  state.script = renameScene(state.script, sceneId, name);
+  await db.saveScript(state.script);
+  render();
+}
+
+async function exportJson() {
+  const raw = serializeScript(state.script);
+  const blob = new Blob([raw], { type: "application/json" });
+  const filename = `${(state.script.title || "script").replace(/[^\w.-]+/g, "-")}.learnscript.json`;
+  const file = new File([blob], filename, { type: "application/json" });
+  try {
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: state.script.title });
+      return;
+    }
+  } catch {
+    /* fall through to download */
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function captureSetupFromForm() {
@@ -585,6 +781,7 @@ async function togglePlay() {
   if (!state.player.playlist) state.player.playlist = buildPlaylist(state.script, state.setup);
   state.player.abort = false;
   state.player.abortStep = false;
+  state.player.waitingAfterGap = false;
   state.player.playing = true;
   state.player.runId = (state.player.runId || 0) + 1;
   const runId = state.player.runId;
@@ -619,6 +816,20 @@ async function runLoop(runId) {
       );
     } else {
       await tts.gap(step.durationMs, shouldAbortStep);
+      if (
+        state.setup.pauseAfterGap &&
+        step.kind === "gap" &&
+        !state.player.abort &&
+        !state.player.abortStep &&
+        state.player.runId === runId
+      ) {
+        state.player.index += 1;
+        if (state.player.index >= playlist.steps.length && state.setup.loop) state.player.index = 0;
+        state.player.playing = false;
+        state.player.waitingAfterGap = true;
+        render();
+        return;
+      }
     }
     if (state.player.abort || state.player.runId !== runId) break;
     state.player.index += 1;
