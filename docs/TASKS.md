@@ -38,16 +38,16 @@ Update this file whenever work starts or finishes. Details and quality notes go 
 
 - [x] P3.1 Paste and `.txt` import with parse preview
 - [x] P3.2 PDF text extraction + same preview
-- [ ] P3.3 Edit character of a line; merge duplicate characters
-- [ ] P3.4 Edit/split/delete lines after import
-- [ ] P3.5 Named scene list from messy PDF text (heuristic + manual rename)
+- [x] P3.3 Edit character of a line; merge duplicate characters
+- [x] P3.4 Edit/split/delete lines after import
+- [x] P3.5 Named scene list from messy PDF text (heuristic + manual rename)
 
 ## P4 — Player parity and polish
 
 - [x] P4.1 Extra gap slider, speed control, stage-direction toggle
-- [ ] P4.2 Pause after my gap
+- [x] P4.2 Pause after my gap
 - [ ] P4.3 Mark problem lines and jump back to them
-- [ ] P4.4 Recap-my-lines-only mode
+- [x] P4.4 Recap-my-lines-only mode
 - [ ] P4.5 First-run coaching overlay
 - [ ] P4.6 Empty/error states and parse-confidence warnings
 - [ ] P4.7 Offline service worker for app shell
@@ -63,9 +63,9 @@ Update this file whenever work starts or finishes. Details and quality notes go 
 
 ## P6 — Distribution
 
-- [ ] P6.1 GitHub Pages (or other HTTPS URL) documented for the phone
-- [ ] P6.2 Add-to-Home-Screen instructions in-app
-- [ ] P6.3 Backup export/import of a script as JSON
+- [x] P6.1 GitHub Pages workflow added (enable Pages → GitHub Actions after merge to `main`)
+- [x] P6.2 Add-to-Home-Screen instructions in-app
+- [x] P6.3 Backup export/import of a script as JSON
 
 ## P7 — Native iOS (after PWA is genuinely good; needs Mac)
 

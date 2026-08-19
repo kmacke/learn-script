@@ -10,7 +10,7 @@ node --test tests/*.test.mjs
 
 These cover:
 
-- Parser: title, acts/scenes, `NAME:` sides, play-format cues, numbered lines, stage directions, character lists
+- Parser, rehearsal playlist, and script edits (reassign speaker, merge characters, split/delete, JSON round-trip)
 - Rehearsal: line/scene range, each play mode, loop wrapping, prompt target, gap estimates
 
 Add a failing test before fixing parser bugs found in real scripts.
@@ -28,6 +28,7 @@ Use the sample **The Green Room**.
 7. Loop returns to the start of the range without a stuck utterance.
 8. Pause stops audio immediately.
 9. Import paste of a tiny custom scene parses and plays.
+10. Tap a line, change speaker, save; merge two characters on Cast.
 
 ## Quality judgment (required in STATUS)
 

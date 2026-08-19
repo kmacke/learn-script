@@ -1,42 +1,42 @@
 # Status
 
-**Updated:** 2026-08-19  
+**Updated:** 2026-08-19 (continue / auto)  
 **Branch:** `cursor/learn-script-app-7c90`  
 **PR:** https://github.com/kmacke/learn-script/pull/1  
-**Phase:** P1–P2 MVP is usable. Next: P3 line editor + P4 player polish.
+**Phase:** P3 import cleanup is in. Next: remaining P4 polish (problem-line marks, first-run overlay, offline SW) or enable GitHub Pages on `main`.
 
 ## What a new agent should do
 
 1. Read `docs/AGENT.md`, this file, and `docs/TASKS.md`.
-2. Run `node --test tests/*.test.mjs` and `python3 -m http.server 4173 --directory app`.
-3. Start the first incomplete task: **P3.3** (edit character of a line / merge duplicates) unless the user asks otherwise.
-4. Keep iPhone-width rehearsal working; do not rewrite the app.
+2. Run `node --test tests/*.test.mjs` and serve `app/` on port 4173.
+3. Start the first incomplete task: **P4.3** (mark problem lines) unless the user asks otherwise.
+4. Do not rewrite the app. Line editing lives in `app/js/edit.js`.
 
 ## Done this session
 
-- Plan, LineLearner parity notes, resume protocol.
-- Parser + rehearsal engine with 15 automated tests.
-- iPhone-first PWA: library, samples, paste/txt/PDF import, cast & voices, scene/line range, looping player, Prompt, silent-rehearsal fallback.
-- UI QA: player was stuck on a fake “The Green Room” scene (title parsed as dialogue when `options.title` was set). Fixed. After re-tapping the sample, Cues mode auto-advances and Skip works.
+- P3.3–P3.5: tap a line to change speaker / edit / split / delete; merge “Give lines to…” on Cast; rename scene; add character.
+- P4.2 Pause after my gap.
+- P6.2 in-app Add to Home Screen hint; P6.3 JSON backup/export and .json import.
+- GitHub Pages workflow on `main` (owner must enable Pages → GitHub Actions).
+- iPhone-width QA: all line-editor and merge steps passed.
 
 ## Quality judgment (P5)
 
 **Can an actor learn eight lines with this in ten minutes?**  
-Yes, on a phone in Safari, once they open a sample or paste sides, star their role, and run Cues or Line→gap on a short range. Voices depend on Safari’s system TTS; in browsers without speech, timed silent rehearsal still works.
+Yes, and they can now fix a bad PDF parse without leaving the phone.
 
-**Most confusing control:** Cast star vs Rehearse. After import we now land on Cast so they pick a role first.
+**Most confusing control:** `prompt()` dialogs for rename (scene/character) are ugly on iOS but work. A real rename sheet would be nicer.
 
-**Worst iPhone layout bug found:** none remaining that blocked rehearsal; earlier Skip “no-op” was a one-line fake scene, not a tap-target issue.
+**Worst iPhone layout bug found:** none that blocked the editor. Computer-use saw phantom characters while typing in the textarea; saved text was correct.
 
-**Next highest-leverage fix:** after a messy PDF, let the user fix a wrong character on a line and merge duplicate names (P3.3–P3.4). Then GitHub Pages so the phone has an HTTPS URL (P6.1).
+**Next highest-leverage fix:** mark sticky lines in the player (P4.3), then a public HTTPS URL so Safari can Add to Home Screen without a LAN server (enable Pages after merge).
 
 ## Known issues
 
-- Cloud Chrome often has no working `speechSynthesis`; Safari on iPhone is the real target.
-- PDF extract is heuristic; no line editor yet.
-- IndexedDB samples from *before* the header-skip fix were wrong until the sample card is tapped again (now overwrites).
-- EchoScript was not accessible; left untouched.
+- `prompt()` / `confirm()` for rename, merge, delete — native and a bit crude.
+- Pages workflow does not run until this branch is on `main` and Pages is set to GitHub Actions.
+- EchoScript still untouched / not accessible.
 
 ## Next task
 
-**P3.3** Edit character of a line; merge duplicate characters. Then P3.4 split/delete lines. Then P6.1 Pages URL for the iPhone.
+**P4.3** Mark problem lines and jump back to them. Then P4.5 first-run coaching, P4.7 service worker.

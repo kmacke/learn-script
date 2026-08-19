@@ -8,8 +8,8 @@
 
 Until GitHub Pages (or another HTTPS host) is enabled:
 
-- Repo owner: GitHub → Settings → Pages → Deploy from branch `main`, folder `/` (root `index.html` redirects into `app/`).
-- Or run `python3 -m http.server 4173 --directory app` on a computer on the same Wi-Fi and visit `http://<computer-lan-ip>:4173` in Safari.
+- Repo owner: after merge, GitHub → Settings → Pages → **GitHub Actions**. The workflow in `.github/workflows/pages.yml` publishes the repo (root `index.html` redirects into `app/`). Expected URL: `https://kmacke.github.io/learn-script/`
+- Until then, run `python3 -m http.server 4173 --directory app` on a computer on the same Wi-Fi and visit `http://<computer-lan-ip>:4173` in Safari.
 - iOS requires a user tap before speech will start. The Play button is that tap.
 
 ## iOS speech limits we design around
